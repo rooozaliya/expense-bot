@@ -12,9 +12,20 @@ type Expense struct {
 	Amount float64
 	Category string 
 	Description string
+	Currency string
 }
 
-func createExpense(amount float64, category string, description string) (Expense, error) {
+func (e Expense) Format() string {
+	return fmt.Sprintf(
+		"%.2f %s | %s | %s",
+		e.Amount,
+		e.Currency,
+		e.Category,
+		e.Description,
+	)
+}
+
+func createExpense(amount float64, category, description, currency string) (Expense, error) {
 	if(amount<= 0) {
 		return Expense{}, fmt.Errorf("сумма должна быть больше нуля")
 	}
@@ -28,10 +39,17 @@ func createExpense(amount float64, category string, description string) (Expense
 		return Expense{}, fmt.Errorf("описание не может быть пустой")
 	}
 
+
+	if currency == "" {
+		return Expense{}, fmt.Errorf("валюта не может быть пустой")
+	}
+
+
 	return Expense{
 		Amount: amount,
 		Category: category,
 		Description: description,
+		Currency:    currency,
 	}, nil
 }
 
@@ -65,7 +83,15 @@ func readText(reader *bufio.Reader, prompt string) (string, error) {
 	return strings.TrimSpace(input), nil
 }
 
+//e — это конкретный Expense, с которым работает метод. как this в пхп
+func (e Expense) IsValid() bool {
+	return e.Amount > 0 && e.Category != ""
+}
 
+//* изменение объекта, указатель
+func (e *Expense) UpdateDescription(description string) {
+	e.Description = description
+}
 
 func main() {
 	
@@ -90,8 +116,19 @@ func main() {
 			fmt.Println("Ошибка:", err)
 			continue
 		}
+
+		currency, err := readText(reader, "Введите валюту: ")
+		if err != nil {
+			fmt.Println("Ошибка:", err)
+			continue
+		}
 	
-		expense, err := createExpense(amount, category, description)
+		expense, err := createExpense(
+			amount, 
+			category, 
+			description,
+			currency,
+		)
 		if err != nil {
 			fmt.Println("Ошибка:", err)
 			continue
@@ -121,11 +158,7 @@ func main() {
 	//_, - range может вернуть две вещи: индекс + значение
 	//_ означает: это значение я намеренно игнорирую.
 	for _, expense := range expenses {
-		fmt.Printf("%.2f ₽ | %s | %s\n",
-			expense.Amount,
-			expense.Category,
-			expense.Description,
-		)
+		fmt.Println(expense.Format())
 	}
 	
 }
