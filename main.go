@@ -1,11 +1,15 @@
 package main
 
+
 import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/joho/godotenv"
 )
 
 type Expense struct {
@@ -58,12 +62,21 @@ func (e Expense) Format() string {
 	)
 }
 
-func main() {
-	token := os.Getenv("TELEGRAM_BOT_TOKEN")
+type UserState struct {
+	Step        string  // "" | "waiting_amount" | "waiting_category" | "waiting_description"
+	Amount      float64
+	Category    string
+}
 
-	if token == "" {
-		log.Fatal("TELEGRAM_BOT_TOKEN не установлен")
-	}
+// userStates хранит состояние каждого пользователя по его chat ID
+var userStates = make(map[int64]*UserState)
+
+func main() {
+	if err := godotenv.Load(); err != nil {
+        log.Println("Файл .env не найден, использую системные переменные")
+    }
+
+    token := os.Getenv("TELEGRAM_BOT_TOKEN")
 
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -82,19 +95,85 @@ func main() {
 			continue
 		}
 
+		chatID := update.Message.Chat.ID
+
 		if update.Message.IsCommand() {
 			switch update.Message.Command() {
 			case "start":
-				msg := tgbotapi.NewMessage(
-					update.Message.Chat.ID,
-					"Привет! Я бот для учёта расходов.",
-				)
+				sendMessage(bot, chatID, "Привет! Я бот для учёта расходов.\nКоманды: /add, /help")
 
-				_, err := bot.Send(msg)
-				if err != nil {
-					log.Println(err)
-				}
+			case "help":
+				sendMessage(bot, chatID, "/add — добавить расход\n/help — эта справка")
+			case "add":
+				userStates[chatID] = &UserState{Step: "waiting_amount"}
+				sendMessage(bot, chatID, "Введи сумму расхода:")
 			}
+			continue
+			
 		}
+	handleTextMessage(bot, chatID, update.Message.Text)
+
+	}
+
+}
+
+//отправка сообщений
+func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	if _, err := bot.Send(msg); err != nil {
+		log.Println(err)
+	}
+
+}
+
+func handleTextMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
+	state, exists := userStates[chatID]
+	if !exists {
+		sendMessage(bot, chatID, "Не понимаю. Используй /add чтобы добавить расход.")
+		return
+	}
+
+	switch state.Step {
+	case "waiting_amount":
+		amount, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		if err != nil {
+			sendMessage(bot, chatID, "Это не похоже на число. Введи сумму ещё раз, например: 350.50")
+			return // остаёмся на том же шаге, ждём повторный ввод
+		}
+		if amount <= 0 {
+			sendMessage(bot, chatID, "Сумма должна быть больше нуля. Попробуй ещё раз:")
+			return
+		}
+		state.Amount = amount
+		state.Step = "waiting_category"
+		sendMessage(bot, chatID, "Принято. Теперь введи категорию (например: еда, транспорт):")
+
+	case "waiting_category":
+		category := strings.TrimSpace(text)
+		if category == "" {
+			sendMessage(bot, chatID, "Категория не может быть пустой. Введи ещё раз:")
+			return
+		}
+
+		state.Category = category
+		state.Step = "waiting_description"
+		sendMessage(bot, chatID, "Отлично. Добавь описание (или отправь '-' чтобы пропустить):")
+
+	case "waiting_description":
+		description := strings.TrimSpace(text)
+		if description == "-" {
+			description = ""
+		}
+
+		expense, err := createExpense(state.Amount, state.Category, description, "RUB")
+		if err != nil {
+			sendMessage(bot, chatID, "Ошибка: "+err.Error())
+			return
+		}
+
+		sendMessage(bot, chatID, "Расход добавлен:\n"+expense.Format())
+
+		delete(userStates, chatID) // диалог завершён, сбрасываем состояние
+	
 	}
 }
