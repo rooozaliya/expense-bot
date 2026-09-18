@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
@@ -17,6 +18,7 @@ type Expense struct {
 	Category    string
 	Description string
 	Currency    string
+	CreatedAt   time.Time
 }
 
 func createExpense(amount float64, category, description, currency string) (Expense, error) {
@@ -41,6 +43,7 @@ func createExpense(amount float64, category, description, currency string) (Expe
 		Category:    category,
 		Description: description,
 		Currency:    currency,
+		CreatedAt:   time.Now(),
 	}, nil
 }
 
@@ -54,11 +57,12 @@ func (e *Expense) UpdateDescription(description string) {
 
 func (e Expense) Format() string {
 	return fmt.Sprintf(
-		"%.2f %s | %s | %s",
+		"%.2f %s | %s | %s | %s",
 		e.Amount,
 		e.Currency,
 		e.Category,
 		e.Description,
+		e.CreatedAt.Format("02.01.2006 15:04"),
 	)
 }
 
@@ -71,12 +75,15 @@ type UserState struct {
 // userStates хранит состояние каждого пользователя по его chat ID
 var userStates = make(map[int64]*UserState)
 
+var userExpenses = make(map[int64][]Expense)
+
 func main() {
 	if err := godotenv.Load(); err != nil {
         log.Println("Файл .env не найден, использую системные переменные")
     }
 
     token := os.Getenv("TELEGRAM_BOT_TOKEN")
+	log.Println(token)
 
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -107,7 +114,10 @@ func main() {
 			case "add":
 				userStates[chatID] = &UserState{Step: "waiting_amount"}
 				sendMessage(bot, chatID, "Введи сумму расхода:")
+			case "list":
+				handleListCommand(bot, chatID)
 			}
+			
 			continue
 			
 		}
@@ -115,6 +125,32 @@ func main() {
 
 	}
 
+}
+
+
+func addExpense(chatID int64, expense Expense) {
+	userExpenses[chatID] = append(userExpenses[chatID], expense)
+}
+
+func getExpenses(chatID int64) []Expense {
+	return userExpenses[chatID] // если пусто — вернётся nil
+}
+
+func handleListCommand(bot *tgbotapi.BotAPI, chatID int64) {
+	expenses := getExpenses(chatID)
+
+	if len(expenses) == 0 {
+		sendMessage(bot, chatID, "У тебя пока нет расходов. Добавь через /add")
+		return
+	}
+
+	var lines []string
+	for _, expense := range expenses {
+		lines = append(lines, expense.Format())
+	}
+
+	text := strings.Join(lines, "\n")
+	sendMessage(bot, chatID, text)
 }
 
 //отправка сообщений
@@ -170,6 +206,7 @@ func handleTextMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
 			sendMessage(bot, chatID, "Ошибка: "+err.Error())
 			return
 		}
+		addExpense(chatID, expense) 
 
 		sendMessage(bot, chatID, "Расход добавлен:\n"+expense.Format())
 
