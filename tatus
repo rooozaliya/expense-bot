@@ -1,0 +1,67 @@
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex e69de29..ecc2072 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -0,0 +1,14 @@[m
+[32m+[m[32m# Go build[m
+[32m+[m[32m/bin/[m
+[32m+[m[32m/dist/[m
+[32m+[m
+[32m+[m[32m# IDE[m
+[32m+[m[32m.idea/[m
+[32m+[m[32m.vscode/[m
+[32m+[m
+[32m+[m[32m# OS[m
+[32m+[m[32m.DS_Store[m
+[32m+[m[32mThumbs.db[m
+[32m+[m
+[32m+[m[32m# Environment variables[m
+[32m+[m[32m.env[m
+\ No newline at end of file[m
+[1mdiff --git a/main.go b/main.go[m
+[1mindex bf8f48e..db3c22c 100644[m
+[1m--- a/main.go[m
+[1m+++ b/main.go[m
+[36m@@ -1,6 +1,9 @@[m
+ package main[m
+ [m
+[31m-import "fmt"[m
+[32m+[m[32mimport ([m
+[32m+[m	[32m"errors"[m
+[32m+[m	[32m"fmt"[m
+[32m+[m[32m)[m
+ [m
+ type Expense struct {[m
+ 	Amount float64[m
+[36m@@ -8,20 +11,26 @@[m [mtype Expense struct {[m
+ 	Description string[m
+ }[m
+ [m
+[31m-func createExpense(amount float64, category string, description string) *Expense {[m
+[31m-	return &Expense{[m
+[32m+[m[32mfunc createExpense(amount float64, category string, description string) (Expense, error) {[m
+[32m+[m	[32mif(amount<= 0) {[m
+[32m+[m		[32mreturn Expense{}, errors.New("сумма должна быть больше нуля")[m
+[32m+[m	[32m}[m
+[32m+[m	[32mreturn Expense{[m
+ 		Amount: amount,[m
+ 		Category: category,[m
+ 		Description: description,[m
+[31m-	}[m
+[32m+[m	[32m}, nil[m
+ }[m
+ [m
+ [m
+ func main() {[m
+[31m-	expense:= createExpense(450, "food", "dinner")[m
+[32m+[m	[32mexpense, err := createExpense(-450, "food", "dinner")[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mfmt.Println("Ошибка:", err)[m
+[32m+[m		[32mreturn[m
+[32m+[m	[32m}[m
+ [m
+ [m
+[31m-	fmt.Println(expense)[m
+ 	fmt.Println("Сумма:", expense.Amount)[m
+ 	fmt.Println("Категория:", expense.Category)[m
+ 	fmt.Println("Описание:", expense.Description)[m
