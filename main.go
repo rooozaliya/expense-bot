@@ -8,10 +8,30 @@ import (
 	"strconv"
 	"strings"
 	"time"
+		"database/sql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
 )
+
+var db *sql.DB
+
+func initDB() {
+	connStr := "postgres://expense_user:expense_pass@localhost:5432/expense_bot"
+
+	var err error
+	db, err = sql.Open("pgx", connStr)
+	if err != nil {
+		log.Fatal("Не удалось открыть соединение с БД: ", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		log.Fatal("Не удалось подключиться к БД: ", err)
+	}
+
+	log.Println("Подключение к БД установлено")
+}
 
 type Expense struct {
 	Amount      float64
@@ -75,12 +95,24 @@ type UserState struct {
 // userStates хранит состояние каждого пользователя по его chat ID
 var userStates = make(map[int64]*UserState)
 
-var userExpenses = make(map[int64][]Expense)
+
+func ensureUser(chatID int64) error {
+
+	//db.Exec — используется для запросов, которые не возвращают строки
+	_, err := db.Exec(
+		`INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`,
+		chatID,
+	)
+	return err
+}
 
 func main() {
 	if err := godotenv.Load(); err != nil {
         log.Println("Файл .env не найден, использую системные переменные")
     }
+
+	initDB()
+	defer db.Close()
 
     token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	log.Println(token)
@@ -127,17 +159,57 @@ func main() {
 
 }
 
-
-func addExpense(chatID int64, expense Expense) {
-	userExpenses[chatID] = append(userExpenses[chatID], expense)
+//Добавляют траты юзеру в бд
+func addExpense(chatID int64, expense Expense) error {
+	if err := ensureUser(chatID); err != nil {
+		return err
+	}
+	_, err := db.Exec(
+		`INSERT INTO expenses (user_id, amount, category, description, currency, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		chatID,
+		expense.Amount,
+		expense.Category,
+		expense.Description,
+		expense.Currency,
+		expense.CreatedAt,
+	)
+	return err
 }
 
-func getExpenses(chatID int64) []Expense {
-	return userExpenses[chatID] // если пусто — вернётся nil
+func getExpenses(chatID int64) ([]Expense, error) {
+	rows, err := db.Query(
+		`SELECT amount, category, description, currency, created_at
+		 FROM expenses
+		 WHERE user_id = $1
+		 ORDER BY created_at`,
+		chatID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var expenses []Expense
+	for rows.Next() {
+		var e Expense
+		if err := rows.Scan(&e.Amount, &e.Category, &e.Description, &e.Currency, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		expenses = append(expenses, e)
+	}
+
+	return expenses, rows.Err()
 }
 
 func handleListCommand(bot *tgbotapi.BotAPI, chatID int64) {
-	expenses := getExpenses(chatID)
+	expenses, err := getExpenses(chatID)
+
+	if err != nil {
+		log.Println("Ошибка получения расходов:", err)
+		sendMessage(bot, chatID, "Не удалось получить список расходов")
+		return
+	}
 
 	if len(expenses) == 0 {
 		sendMessage(bot, chatID, "У тебя пока нет расходов. Добавь через /add")
@@ -206,11 +278,14 @@ func handleTextMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
 			sendMessage(bot, chatID, "Ошибка: "+err.Error())
 			return
 		}
-		addExpense(chatID, expense) 
-
+		
+		if err := addExpense(chatID, expense); err != nil {
+			log.Println("Ошибка сохранения расхода:", err)
+			sendMessage(bot, chatID, "Не удалось сохранить расход, попробуй позже")
+			return
+		}
+		
 		sendMessage(bot, chatID, "Расход добавлен:\n"+expense.Format())
-
-		delete(userStates, chatID) // диалог завершён, сбрасываем состояние
-	
+		delete(userStates, chatID)
 	}
 }
