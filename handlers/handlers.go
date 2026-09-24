@@ -114,17 +114,27 @@ func (h *Handler) handleListCommand(bot *tgbotapi.BotAPI, chatID int64) {
 }
 
 
-
 func (h *Handler) HandleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
 
 	if !h.allowed[chatID] {
 		log.Printf("Попытка доступа от неразрешённого пользователя: %d", chatID)
-		return // молча игнорируем — бот вообще не отвечает
+		return
 	}
 
 	if update.Message.IsCommand() {
-		// ... остальной код без изменений
+		switch update.Message.Command() {
+		case "start":
+			h.sendMessage(bot, chatID, "Привет! Я бот для учёта расходов.\nКоманды: /add, /help")
+		case "help":
+			h.sendMessage(bot, chatID, "/add — добавить расход\n/help — эта справка")
+		case "add":
+			h.states[chatID] = &models.UserState{Step: "waiting_amount"}
+			h.sendMessage(bot, chatID, "Введи сумму расхода:")
+		case "list":
+			h.handleListCommand(bot, chatID)
+		}
+		return
 	}
 
 	h.handleTextMessage(bot, chatID, update.Message.Text)
