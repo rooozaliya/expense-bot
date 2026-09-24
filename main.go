@@ -18,7 +18,7 @@ func main() {
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	
-	h := handlers.New(repo, cfg.AllowedUserIDs)
+
 
 	if err != nil {
 		log.Fatal(err)
@@ -30,7 +30,7 @@ func main() {
 	log.Println("Подключение к БД установлено")
 
 	repo := repository.NewExpenseRepository(db)
-	h := handlers.New(repo)
+	h := handlers.New(repo, cfg.AllowedUserIDs)
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
