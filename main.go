@@ -17,6 +17,8 @@ func main() {
 	cfg := config.Load()
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
+	
+	h := handlers.New(repo, cfg.AllowedUserIDs)
 
 	if err != nil {
 		log.Fatal(err)

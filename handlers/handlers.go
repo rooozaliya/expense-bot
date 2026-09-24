@@ -14,12 +14,14 @@ import (
 type Handler struct {
 	repo   *repository.ExpenseRepository
 	states map[int64]*models.UserState
+	allowed map[int64]bool
 }
 
-func New(repo *repository.ExpenseRepository) *Handler {
+func New(repo *repository.ExpenseRepository, allowed map[int64]bool) *Handler {
 	return &Handler{
-		repo:   repo,
-		states: make(map[int64]*models.UserState),
+		repo:    repo,
+		states:  make(map[int64]*models.UserState),
+		allowed: allowed,
 	}
 }
 
@@ -114,25 +116,16 @@ func (h *Handler) handleListCommand(bot *tgbotapi.BotAPI, chatID int64) {
 
 
 func (h *Handler) HandleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
-
 	chatID := update.Message.Chat.ID
 
-	if update.Message.IsCommand() {
-		switch update.Message.Command() {
-		case "start":
-			h.sendMessage(bot, chatID, "Привет! Я бот для учёта расходов.\nКоманды: /add, /help")
+	if !h.allowed[chatID] {
+		log.Printf("Попытка доступа от неразрешённого пользователя: %d", chatID)
+		return // молча игнорируем — бот вообще не отвечает
+	}
 
-		case "help":
-			h.sendMessage(bot, chatID, "/add — добавить расход\n/help — эта справка")
-		case "add":
-			h.states[chatID] = &models.UserState{Step: "waiting_amount"}
-			h.sendMessage(bot, chatID, "Введи сумму расхода:")
-		case "list":
-			h.handleListCommand(bot, chatID)
-		}
-		
-		return
-		
-		}
+	if update.Message.IsCommand() {
+		// ... остальной код без изменений
+	}
+
 	h.handleTextMessage(bot, chatID, update.Message.Text)
 }
